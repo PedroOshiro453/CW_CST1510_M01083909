@@ -1,35 +1,101 @@
+from pathlib import Path
+from typing import Optional
 
 import bcrypt
 
-password = 'Magic123'
 
-def hash_password(pasword):
-    binary_password = password.encode('utf-8')
+# Resolve DATA/user.txt relative to this file, regardless of CWD
+PROJECT_ROOT = Path(__file__).resolve().parent
+USER_FILE = PROJECT_ROOT / "DATA" / "user.txt"
+
+DEFAULT_PASSWORD = "Magic123"
+
+def hash_password(password: str) -> str:
+    binary_password = password.encode("utf-8")
     salt = bcrypt.gensalt()
-    hash = bcrypt.hashpw(binary_password, salt)
-    return hash.decode('utf-8')
+    hashed = bcrypt.hashpw(binary_password, salt)
+    return hashed.decode("utf-8")
 
-def validate_hash(password, hash):
-    bin_pwd = password.encode('utf-8')
-    bin_hash = hash.encode('utf-8')
+
+def validate_hash(password: str, hashed: str) -> bool:
+    bin_pwd = password.encode("utf-8")
+    bin_hash = hashed.encode("utf-8")
     return bcrypt.checkpw(bin_pwd, bin_hash)
 
-def register_user():
-    user_name = input("Enter username: ")
-    user_pwd = input("Enter password: ")
-    hash = hash_password(user_pwd)
-    with open("user.txt", "a") as f:
-        f.write(f"{user_name},{hash}\n")
 
-def login_user():
-    user_name = input("Enter username: ")
-    user_pwd = input("Enter password: ")
-    with open("user.txt", "r") as f:
-        users = f.readlines()
+def verify_password(password: str, hashed: str) -> bool:
+    """Compatibility helper used by the Streamlit app (same as validate_hash)."""
+    return validate_hash(password, hashed)
 
-    for user in users:
-        name, hash = user.strip().split(",")
+def _ensure_user_file():
+    USER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not USER_FILE.exists():
+        USER_FILE.touch()
 
-        if user_name == name:
-            return validate_hash(user_pwd, hash)
-    return False
+
+def _load_users():
+    _ensure_user_file()
+    users = {}
+    with USER_FILE.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                name, hashed = line.split(",", 1)
+                users[name] = hashed
+            except ValueError:
+                # Skip malformed lines
+                continue
+    return users
+
+
+def _save_users(users: dict):
+    _ensure_user_file()
+    with USER_FILE.open("w", encoding="utf-8") as f:
+        for name, hashed in users.items():
+            f.write(f"{name},{hashed}\n")
+
+
+def register_user(username: Optional[str] = None, password: Optional[str] = None) -> bool:
+    """Register a new user. Returns True on success, False if username exists.
+
+    If password is empty/omitted, uses DEFAULT_PASSWORD for convenience.
+    """
+    if username is None:
+        username = input("Enter username: ").strip()
+    if password is None:
+        password = input("Enter password (leave blank for default): ")
+
+    if not username:
+        print("Username cannot be empty.")
+        return False
+
+    if not password.strip():
+        password = DEFAULT_PASSWORD
+
+    users = _load_users()
+    if username in users:
+        print("Username already exists.")
+        return False
+
+    users[username] = hash_password(password)
+    _save_users(users)
+    return True
+
+
+def login_user(username: Optional[str] = None, password: Optional[str] = None) -> bool:
+    """Validate user credentials against stored hashes. Returns True/False.
+
+    If username/password are not provided, prompts via stdin.
+    """
+    if username is None:
+        username = input("Enter username: ").strip()
+    if password is None:
+        password = input("Enter password: ")
+
+    users = _load_users()
+    hashed = users.get(username)
+    if not hashed:
+        return False
+    return validate_hash(password, hashed)

@@ -1,123 +1,61 @@
-import time
+"""
+Week 9 (Streamlit UI): App navigation + session_state + guard pattern.
+
+Run:
+    streamlit run Apps.py
+"""
+
 import streamlit as st
-from app.incidents import migrating_cyber_incidents
-from app.db import get_db_connection
-from app.auth import authenticate, register
+
+from Home import render_home_page
 
 
-
-st.set_page_config(page_title="Home Page", page_icon="🏠", layout="wide")
-
-
-if 'logged_in' not in st.session_state:
-st.session_state.logged_in = False
-st.session_state.username = None
+from Dashboard import render_cyber_incidents_page
 
 
-def safe_rerun() -> None:
-"""Trigger a Streamlit rerun. Use experimental_rerun if present, otherwise
-fall back to changing query params which causes a reload."""
-if hasattr(st, "experimental_rerun"):
-try:
-st.experimental_rerun()
-return
-except Exception:
-pass
-st.query_params = {"_r": [str(int(time.time()))]}
-
-tab_names = ["Apps"]
-if st.session_state.logged_in:
-tab_names.append("Dashboard")
-
-tabs = st.tabs(tab_names)
-
-apps_tab = tabs[0]
-
-with apps_tab:
-st.header('Authentication')
-if not st.session_state.logged_in:
-mode = st.radio('Choose action', ['Login', 'Register'], horizontal=True)
-if mode == 'Login':
-user = st.text_input('Username', key='login_user')
-pwd = st.text_input('Password', type='password', key='login_pwd')
-if st.button('Login'):
-if authenticate(user, pwd):
-st.session_state.logged_in = True
-st.session_state.username = user
-safe_rerun()
-else:
-st.error('Invalid username or password')
-else:
-r_user = st.text_input('Choose username', key='reg_user')
-r_pwd = st.text_input('Choose password', type='password', key='reg_pwd')
-if st.button('Register'):
-if not r_user or not r_pwd:
-st.error('Please provide username and password')
-else:
-ok = register(r_user, r_pwd)
-if ok:
-st.success('Registered successfully — please login')
-else:
-st.error('Username already exists')
-else:
-st.success(f"Logged in as {st.session_state.username}")
-if st.button('Logout'):
-st.session_state.logged_in = False
-st.session_state.username = None
-safe_rerun()
-
-if st.session_state.logged_in:
-dashboard_tab = tabs[1]
-with dashboard_tab:
-st.header('Home Page')
-st.write(f'Welcome {st.session_state.username} — to the Home Page of the Application!')
-
-conn = get_db_connection()
-data = migrating_cyber_incidents(conn)
-
-st.subheader('Cyber Incidents Overview')
-severity_ = st.selectbox('severity', data['severity'].unique())
-
-filtered_data = data[data['severity'] == severity_]
-
-col1, col2 = st.columns(2)
-with col1:
-st.subheader('Number of Incidents by Severity')
-st.bar_chart(filtered_data['category'].value_counts())
-
-with col2:
-st.subheader('Filtered Cyber Incidents Data')
-st.line_chart(filtered_data, x='timestamp', y='incident_id')
-
-st.dataframe(filtered_data)
+def init_session_state() -> None:
+    if "is_logged_in" not in st.session_state:
+        st.session_state.is_logged_in = False
+    if "username" not in st.session_state:
+        st.session_state.username = ""
+    if "page" not in st.session_state:
+        st.session_state.page = "Home (Login/Register)"
 
 
+def require_login() -> None:
+    if not st.session_state.is_logged_in:
+        st.warning("You must be logged in to access this page.")
+        st.stop()
 
-if not st.session_state.logged_in:
-st.title('Please sign in')
-st.info('Use the sidebar to login or register.')
-st.stop()
+
+def main() -> None:
+    st.set_page_config(
+        page_title="Multi-Domain Intelligence Platform (CW2)",
+        page_icon="🧠",
+        layout="wide",
+    )
+
+    init_session_state()
+
+    with st.sidebar:
+        st.title("CW2 Navigation")
+        if st.session_state.is_logged_in:
+            st.success(f"Logged in as: {st.session_state.username}")
+        else:
+            st.info("Not logged in")
+
+        options = ["Home (Login/Register)", "Cyber Incidents Dashboard"]
+        current = st.session_state.page if st.session_state.page in options else options[0]
+        page = st.radio("Go to", options=options, index=options.index(current))
+        st.session_state.page = page
+
+    if page == "Home (Login/Register)":
+        render_home_page()
+        return
+
+    require_login()
+    render_cyber_incidents_page()
 
 
-st.header('Home Page')
-st.write(f'Welcome {st.session_state.username} — to the Home Page of the Application!')
-
-conn = get_db_connection()
-data = migrating_cyber_incidents(conn)
-
-with st.sidebar:
-st.header('Cyber Incidents Overview')
-severity_ = st.selectbox('severity', data['severity'].unique())
-
-filtered_data = data[data['severity'] == severity_]
-
-col1, col2 = st.columns(2)
-with col1:
-st.subheader('Number of Incidents by Severity')
-st.bar_chart(filtered_data['category'].value_counts())
-
-with col2:
-st.subheader('Filtered Cyber Incidents Data')
-st.line_chart(filtered_data, x='timestamp', y='incident_id')
-
-st.dataframe(filtered_data)
+if __name__ == "__main__":
+    main()
